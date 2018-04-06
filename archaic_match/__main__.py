@@ -16,6 +16,8 @@ from .classmodule import Window
 from .funcmodule import get_samplename_list
 from .funcmodule import get_chrom_sizes
 from .funcmodule import generate_windows
+from .funcmodule import get_sample_populations
+
 
 __version__ = "0.1"
 __author__ = "Lance Parsons"
@@ -43,18 +45,25 @@ def main():
                              required=True,
                              help="VCF file to parse",
                              metavar="FILE")
-    input_group.add_argument("--archaic-samples",
+    input_group.add_argument("--populations",
                              required=True,
-                             help="File listing archaic samples, one per line",
+                             help="Tab delimited file with columns sample, "
+                             "population, and super-population",
                              metavar="FILE")
-    input_group.add_argument("--modern-samples",
+    input_group.add_argument("--archaic-populations",
                              required=True,
-                             help="File listing modern samples to analyze, "
-                             "one per line",
+                             nargs='+',
+                             help="List of archaic populations",
+                             metavar="FILE")
+    input_group.add_argument("--modern-populations",
+                             required=True,
+                             nargs='+',
+                             help="List of modern populations",
                              metavar="FILE")
     input_group.add_argument("--chrom-sizes",
                              required=True,
-                             help="Tab delimited file with seqid\tlength",
+                             help="Tab delimited file with seqid\tlength or "
+                             "INT specifying default chromsome length",
                              metavar="FILE")
 
     pvalue_group = input_parser.add_argument_group('Pvalue computation')
@@ -146,11 +155,15 @@ def max_match_pct_pvalue(informative_site_frequency, haplotype,
 
 def max_match_pct(args):
 
-    # List of archic sample names
-    archaic_sample_list = get_samplename_list(args.archaic_samples)
+    sample_populations = get_sample_populations(args.populations)
+    logging.debug("Sample populations: {}".format(sample_populations))
+
+    archaic_sample_list = get_samplename_list(args.archaic_populations,
+                                              sample_populations)
     logging.debug("Archaic sample list: {}".format(archaic_sample_list))
 
-    modern_sample_list = get_samplename_list(args.modern_samples)
+    modern_sample_list = get_samplename_list(args.modern_populations,
+                                             sample_populations)
     logging.debug("Modern sample list: {}".format(modern_sample_list))
 
     if args.chrom_sizes.isdigit():
@@ -270,7 +283,7 @@ def max_match_pct(args):
                 else:
                     print("{window:.6f}\t{haplotype}\t{match_pct}".format(
                         window=window.informative_site_frequency,
-                        haplotype=modern_haplotype_id,
+                        haplotype=sample_populations[modern_sample].population,
                         match_pct=max_match_pct))
     sys.stdout.flush()
 
