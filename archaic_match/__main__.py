@@ -12,6 +12,8 @@ import allel
 import numpy
 import subprocess
 import sys
+import functools
+import glob
 from .classmodule import Window
 from .funcmodule import get_samplename_list
 from .funcmodule import get_chrom_sizes
@@ -39,32 +41,38 @@ def main():
         add_help=True)
 
     # Input file options
-    input_parser = argparse.ArgumentParser(add_help=False)
-    input_group = input_parser.add_argument_group('Variant input files')
-    input_group.add_argument("--vcf-file",
-                             required=True,
-                             help="VCF file to parse",
-                             metavar="FILE")
-    input_group.add_argument("--populations",
-                             required=True,
-                             help="Tab delimited file with columns sample, "
-                             "population, and super-population",
-                             metavar="FILE")
-    input_group.add_argument("--archaic-populations",
-                             required=True,
-                             nargs='+',
-                             help="List of archaic populations",
-                             metavar="FILE")
-    input_group.add_argument("--modern-populations",
-                             required=True,
-                             nargs='+',
-                             help="List of modern populations",
-                             metavar="FILE")
-    input_group.add_argument("--chrom-sizes",
-                             required=True,
-                             help="Tab delimited file with seqid\tlength or "
-                             "INT specifying default chromsome length",
-                             metavar="FILE")
+    input_parser = argparse.ArgumentParser(
+        add_help=False,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    vcf_group = input_parser.add_argument_group('VCF Files')
+    vcf_group.add_argument("--vcf",
+                           required=True,
+                           nargs="+",
+                           help="VCF file to parse",
+                           metavar="VCF_FILE")
+
+    population_group = input_parser.add_argument_group('Population options')
+    population_group.add_argument("--populations",
+                                  required=True,
+                                  help="Tab delimited file with columns "
+                                  "sample, population, and super-population",
+                                  metavar="FILE")
+    population_group.add_argument("--archaic-populations",
+                                  required=True,
+                                  nargs='+',
+                                  help="List of archaic populations",
+                                  metavar="FILE")
+    population_group.add_argument("--modern-populations",
+                                  required=True,
+                                  nargs='+',
+                                  help="List of modern populations",
+                                  metavar="FILE")
+    population_group.add_argument("--chrom-sizes",
+                                  required=True,
+                                  help="Tab delimited file with seqid\tlength "
+                                  "or INT specifying default chromsome length",
+                                  metavar="FILE")
 
     pvalue_group = input_parser.add_argument_group('Pvalue computation')
     pvalue_group.add_argument("--match-pct-database",
@@ -79,12 +87,14 @@ def main():
                               "informative site frequencies within THRESHOLD "
                               "of the query windows informative site "
                               "frequency to determine the null distribution",
-                              default=0.0005,
+                              default=0.0001,
                               type=float,
                               metavar="THRESHOLD")
 
     # Window size options
-    window_parser = argparse.ArgumentParser(add_help=False)
+    window_parser = argparse.ArgumentParser(
+        add_help=False,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     window_group = window_parser.add_argument_group('Window size options')
     window_group.add_argument("--window-size",
                               help=("Size of windows to calculate match "
@@ -105,17 +115,20 @@ def main():
     #                     metavar="windows.bed")
 
     # Other options
-    parent_parser.add_argument("-v", "--verbose",
-                               help="increase output verbosity",
-                               action="store_true")
-    parent_parser.add_argument("--version", action="version",
-                               version="%(prog)s " + __version__)
+    common_options = argparse.ArgumentParser(
+        add_help=False,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    common_options.add_argument("-v", "--verbose",
+                                help="increase output verbosity",
+                                action="store_true")
+    common_options.add_argument("--version", action="version",
+                                version="%(prog)s " + __version__)
 
     subparsers = parent_parser.add_subparsers(
         help="commands")
     parser_max_match_pct = subparsers.add_parser(
         'max-match-pct',
-        parents=[input_parser, window_parser])
+        parents=[input_parser, window_parser, common_options])
     parser_max_match_pct.set_defaults(func=max_match_pct)
     # parser_max_match_pct_pvalue = subparsers.add_parser(
     #     'max-match-pct-pvalue',
@@ -137,20 +150,44 @@ def main():
         args.func(args)
 
 
-def max_match_pct_pvalue(informative_site_frequency, haplotype,
+@functools.lru_cache(maxsize=None)
+def max_match_pct_pvalue(informative_site_frequency, population,
                          max_match_pct, dbconn, threshold):
     '''Calculate emperical pvalue from windows in database'''
     lower_threshold = informative_site_frequency - threshold
     upper_threshold = informative_site_frequency + threshold
+    n = windows_within_isf_threshold(
+        informative_site_frequency=informative_site_frequency,
+        population=population,
+        threshold=threshold,
+        dbconn=dbconn)
     c = dbconn.cursor()
-    c.execute('''SELECT max_match_pct from MAX_MATCH_PCT
+    c.execute('''SELECT count(*) from MAX_MATCH_PCT
               where informative_site_frequency >= ?
-              and informative_site_frequency <= ?''',
-              (lower_threshold, upper_threshold))
-    null_distribution = numpy.array(c.fetchall())
-    pvalue = float(sum(null_distribution >= max_match_pct)
-                   / len(null_distribution))
+              and informative_site_frequency <= ?
+              and population = ?
+              and max_match_pct >= ?''',
+              (lower_threshold, upper_threshold, population, max_match_pct))
+    s = float(c.fetchone()[0])
+    pvalue = (s + 1) / (n + 1)
     return pvalue
+
+
+@functools.lru_cache(maxsize=None)
+def windows_within_isf_threshold(informative_site_frequency, population,
+                                 threshold, dbconn):
+    '''Return number of windows for a given population within the informative
+    site frequency threshold'''
+    lower_threshold = informative_site_frequency - threshold
+    upper_threshold = informative_site_frequency + threshold
+    c = dbconn.cursor()
+    c.execute('''SELECT count(*) from MAX_MATCH_PCT
+              where informative_site_frequency >= ?
+              and informative_site_frequency <= ?
+              and population = ?''',
+              (lower_threshold, upper_threshold, population))
+    n = float(c.fetchone()[0])
+    return n
 
 
 def max_match_pct(args):
@@ -178,114 +215,148 @@ def max_match_pct(args):
         import sqlite3
         dbconn = sqlite3.connect(args.match_pct_database)
 
-    chromsomes_in_vcf = subprocess.run(['tabix', '-l', args.vcf_file],
-                                       stdout=subprocess.PIPE,
-                                       universal_newlines=True)
-    # logging.debug(chromsomes_in_vcf.stdout)
-#    with open(args.windows_file, 'w') as windows_file:
-    for chrom in chromsomes_in_vcf.stdout.split('\n'):
-        chrom_size = chrom_sizes.get(chrom, default_chromsize)
-        if chrom is None:
-            raise RuntimeError("Chromsome {} in vcf file but not in chromsome "
-                               "sizes list".format(chrom))
-        chrom_region = "{seq}:{start:d}-{end:d}".format(
-            seq=chrom, start=1, end=chrom_size
-        )
-        callset = allel.read_vcf(args.vcf_file, region=chrom_region)
-        if 'calldata/GT' not in callset:
-            continue
-        archaic_sample_idx = [callset['samples'].tolist().index(i)
-                              for i in archaic_sample_list]
-        logging.debug("Archaic sample indicies: {}"
-                      .format(archaic_sample_idx))
-        modern_sample_idx = [callset['samples'].tolist().index(i)
-                             for i in modern_sample_list]
-        logging.debug("Modern sample indicies: {}"
-                      .format(modern_sample_idx))
-        genotype_array = allel.GenotypeArray(callset['calldata/GT'])
-        variant_pos = callset['variants/POS']
-        for window_coords in generate_windows(0, chrom_size,
-                                              args.window_size,
-                                              args.step_size):
-            region = "{seq}:{start:d}-{end:d}".format(
-                seq=chrom, start=window_coords[0], end=window_coords[1]
+    vcf_filelist = list()
+    for vcf_file_pattern in args.vcf:
+        vcf_filelist.extend(glob.glob(vcf_file_pattern))
+    logging.debug("VCF File list:\n{}".format(vcf_filelist))
+    for vcf_file in vcf_filelist:
+        chromsomes_in_vcf = subprocess.run(['tabix', '-l', vcf_file],
+                                           stdout=subprocess.PIPE,
+                                           universal_newlines=True)
+        # logging.debug(chromsomes_in_vcf.stdout)
+    #    with open(args.windows_file, 'w') as windows_file:
+        for chrom in chromsomes_in_vcf.stdout.split('\n'):
+            chrom_size = chrom_sizes.get(chrom, default_chromsize)
+            if chrom is None:
+                raise RuntimeError("Chromsome {} in vcf file but not in "
+                                   "chromsome sizes list".format(chrom))
+            chrom_region = "{seq}:{start:d}-{end:d}".format(
+                seq=chrom, start=1, end=chrom_size
             )
-            logging.debug("window region: {}".format(region))
+            callset = allel.read_vcf(vcf_file, region=chrom_region)
+            if 'calldata/GT' not in callset:
+                continue
+            archaic_sample_idx = [callset['samples'].tolist().index(i)
+                                  for i in archaic_sample_list]
+            logging.debug("Archaic sample indicies: {}"
+                          .format(archaic_sample_idx))
+            modern_sample_idx = [callset['samples'].tolist().index(i)
+                                 for i in modern_sample_list]
+            logging.debug("Modern sample indicies: {}"
+                          .format(modern_sample_idx))
+            genotype_array = allel.GenotypeArray(callset['calldata/GT'])
+            variant_pos = callset['variants/POS']
+            for window_coords in generate_windows(0, chrom_size,
+                                                  args.window_size,
+                                                  args.step_size):
+                region = "{seq}:{start:d}-{end:d}".format(
+                    seq=chrom, start=window_coords[0], end=window_coords[1]
+                )
+                logging.debug("window region: {}".format(region))
+                window_length = window_coords[1] - window_coords[0]
+                variants_in_region = numpy.where(numpy.logical_and(
+                    variant_pos > window_coords[0],
+                    variant_pos <= window_coords[1]))
+                window_genotype_array = genotype_array.subset(
+                    sel0=variants_in_region[0])
+                allele_counts = (window_genotype_array
+                                 .count_alleles_subpops(subpops={
+                                     'archaic': archaic_sample_idx,
+                                     'modern': modern_sample_idx}))
+                # Find variants with at least one non-reference allele call
+                archaic_variant_sites = allele_counts['archaic'].is_variant()
+                # Find segregating variants (where more than one allele is
+                # observed)
+                modern_segregating_sites = (allele_counts['modern']
+                                            .is_segregating())
 
-            window_length = window_coords[1] - window_coords[0]
-            variants_in_region = numpy.where(numpy.logical_and(
-                variant_pos > window_coords[0],
-                variant_pos <= window_coords[1]))
-            window_genotype_array = genotype_array.subset(
-                sel0=variants_in_region[0])
-            allele_counts = (window_genotype_array
-                             .count_alleles_subpops(subpops={
-                                 'archaic': archaic_sample_idx,
-                                 'modern': modern_sample_idx}))
-            # TODO This should be where one or more archaic haplotypes has derived
-            archaic_variant_sites = allele_counts['archaic'].is_variant()
-            # TODO This should be where modern pop varies
-            modern_variant_sites = allele_counts['modern'].is_variant()
+                # Account for masked bases in window
+                informative_sites = (archaic_variant_sites &
+                                     modern_segregating_sites)
+                informative_site_frequency = (sum(informative_sites) /
+                                              window_length)
+                window = Window(
+                    seqid=chrom,
+                    start=window_coords[0],
+                    end=window_coords[1],
+                    informative_site_frequency=informative_site_frequency)
+                window_isf_int = int(round(
+                    window.informative_site_frequency
+                    * args.window_size))
+                threshold_int = int(round(args.frequency_threshold *
+                                          args.window_size))
+                logging.debug("Window: {}".format(region))
+                logging.debug("Number of archic variant sites: {}".format(
+                              sum(archaic_variant_sites)))
+                logging.debug("Number of modern segregating sites: {}".format(
+                              sum(modern_segregating_sites)))
+                logging.debug("Number of informative sites: {}"
+                              .format(sum(informative_sites)))
+                # windows_file.write("{}\n".format(window.to_bed()))
 
-            # TODO Account for masked bases in window
-            informative_sites = (archaic_variant_sites &
-                                 modern_variant_sites)
-            informative_site_frequency = (sum(informative_sites) /
-                                          window_length)
-            window = Window(
-                seqid=chrom,
-                start=window_coords[0],
-                end=window_coords[1],
-                informative_site_frequency=informative_site_frequency)
-            logging.debug("Window: {}".format(region))
-            logging.debug("Number of archic variant sites: {}".format(
-                          sum(archaic_variant_sites)))
-            logging.debug("Number of moden variant sites: {}".format(
-                          sum(modern_variant_sites)))
-            logging.debug("Number of informative sites: {}"
-                          .format(sum(informative_sites)))
-            # windows_file.write("{}\n".format(window.to_bed()))
-
-            # For each modern haplotype, compare to each archaic haplotype
-            modern_haplotypes = allel.HaplotypeArray(
-                window_genotype_array[:, modern_sample_idx]
-                .flatten().reshape(-1, len(modern_sample_idx) * 2))
-            archic_haplotypes = allel.HaplotypeArray(
-                window_genotype_array[:, archaic_sample_idx]
-                .flatten().reshape(-1, len(archaic_sample_idx) * 2))
-            for hap_idx, modern_haplotype in \
-                    enumerate(modern_haplotypes.T):
-                modern_sample = modern_sample_list[
-                    int(numpy.trunc(hap_idx / 2))]
-                modern_haplotype_id = "{sample}:{idx}".format(
-                    sample=modern_sample,
-                    idx=hap_idx % 2)
-                max_match_pct = 0
-                for archic_haplotype in archic_haplotypes.T:
-                    # TODO Limit to informative_sites
-                    match_pct = (numpy.sum(
-                        modern_haplotype == archic_haplotype) /
-                        window_length)
-                    if match_pct > max_match_pct:
-                        max_match_pct = match_pct
-                if args.match_pct_database:
-                    pvalue = max_match_pct_pvalue(
-                        window.informative_site_frequency,
-                        haplotype=modern_haplotype_id,
-                        max_match_pct=max_match_pct,
-                        dbconn=dbconn,
-                        threshold=args.frequency_threshold)
-                    print("{window:.6f}\t{haplotype}\t{match_pct}\t{pvalue}"
-                          .format(window=window.informative_site_frequency,
+                # For each modern haplotype, compare to each archaic haplotype
+                modern_haplotypes = allel.HaplotypeArray(
+                    window_genotype_array[:, modern_sample_idx]
+                    .flatten().reshape(-1, len(modern_sample_idx) * 2))
+                archic_haplotypes = allel.HaplotypeArray(
+                    window_genotype_array[:, archaic_sample_idx]
+                    .flatten().reshape(-1, len(archaic_sample_idx) * 2))
+                for hap_idx, modern_haplotype in \
+                        enumerate(modern_haplotypes.T):
+                    modern_sample = modern_sample_list[
+                        int(numpy.trunc(hap_idx / 2))]
+                    modern_haplotype_id = "{sample}:{idx}".format(
+                        sample=modern_sample,
+                        idx=hap_idx % 2)
+                    max_match_pct = 0
+                    for archic_haplotype in archic_haplotypes.T:
+                        num_informative_sites = numpy.sum(informative_sites)
+                        if num_informative_sites == 0:
+                            match_pct = 0
+                        else:
+                            match_pct = (
+                                numpy.sum(informative_sites &
+                                          (modern_haplotype ==
+                                           archic_haplotype)) /
+                                numpy.sum(informative_sites))
+                        if match_pct > max_match_pct:
+                            max_match_pct = match_pct
+                    if args.match_pct_database:
+                        pvalue = max_match_pct_pvalue(
+                            window_isf_int,
+                            population=(sample_populations[modern_sample]
+                                        .population),
+                            max_match_pct=max_match_pct,
+                            dbconn=dbconn,
+                            threshold=threshold_int)
+                        print("{chr}\t{start}\t{end}\t{isf:.6f}\t{isfd:d}\t"
+                              "{haplotype}\t{population}\t{match_pct}\t"
+                              "{pvalue}".format(
+                                  chr=window.seqid,
+                                  start=window.start,
+                                  end=window.end,
+                                  isf=window.informative_site_frequency,
+                                  isfd=window_isf_int,
                                   haplotype=modern_haplotype_id,
+                                  population=(
+                                      sample_populations[modern_sample]
+                                      .population),
                                   match_pct=max_match_pct,
                                   pvalue=pvalue))
-                else:
-                    print("{window:.6f}\t{haplotype}\t{match_pct}".format(
-                        window=window.informative_site_frequency,
-                        haplotype=sample_populations[modern_sample].population,
-                        match_pct=max_match_pct))
-    sys.stdout.flush()
+                    else:
+                        print("{isfd:d}\t{population}\t{match_pct}".format(
+                            isfd=window_isf_int,
+                            population=sample_populations[modern_sample]
+                            .population,
+                            match_pct=max_match_pct))
+                sys.stdout.flush()
+                logging.debug(
+                    "windows_within_isf_threshold.cache_info(): {}"
+                    .format(windows_within_isf_threshold.cache_info()))
+                logging.debug(
+                    "max_match_pct_pvalue.cache_info(): {}"
+                    .format(max_match_pct_pvalue.cache_info()))
+        sys.stdout.flush()
 
 
 # Standard boilerplate to call the main() function to begin
