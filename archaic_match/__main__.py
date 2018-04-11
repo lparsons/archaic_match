@@ -178,6 +178,15 @@ def main():
 
 
 def build_db(args):
+    logging.debug("Creating database in file: '{}'".format(args.db))
+
+    import csv
+    count_filelist = list()
+    for count_file_pattern in args.match_pct_count:
+        count_filelist.extend(glob.glob(count_file_pattern))
+    logging.debug("Input file list:\n{}".format(count_filelist))
+
+    logging.debug("Creating match_pct_counts table")
     import sqlite3
     dbconn = sqlite3.connect(args.db)
     c = dbconn.cursor()
@@ -188,11 +197,7 @@ def build_db(args):
               'max_match_pct REAL, '
               'count INTEGER)')
 
-    import csv
-    count_filelist = list()
-    for count_file_pattern in args.match_pct_count:
-        count_filelist.extend(glob.glob(count_file_pattern))
-
+    logging.debug("Creating tmp table")
     c.execute('DROP TABLE IF EXISTS tmp')
     c.execute('CREATE TABLE tmp('
               'informative_site_frequency INTEGER, '
@@ -200,6 +205,7 @@ def build_db(args):
               'max_match_pct REAL, '
               'count INTEGER)')
     for count_file in count_filelist:
+        logging.debug("Loading file '{}'".format(count_file))
         tsvData = csv.reader(open(count_file, "rU"), delimiter="\t")
         divData = chunks(tsvData)  # divide into 10000 rows each
         for chunk in divData:
@@ -212,8 +218,7 @@ def build_db(args):
                           (field1, field2, field3, field4))
             c.execute('COMMIT')
 
-    logging.debug("Ready to move data to match_pct_counts from {}"
-                  .format(count_file))
+    logging.debug("Summarize temp data into match_pct_counts from tmp table")
     c.execute('insert into match_pct_counts '
               '(informative_site_frequency, population, '
               'max_match_pct, count) '
@@ -221,10 +226,9 @@ def build_db(args):
               'population, max_match_pct, sum(count) from tmp '
               'group by informative_site_frequency, population, '
               'max_match_pct')
-    logging.debug("Done")
     dbconn.commit()
-
     c.execute('DROP TABLE tmp')
+    logging.debug("Creating indexes")
     c.execute('CREATE INDEX IF NOT EXISTS isf_idx ON match_pct_counts '
               '(informative_site_frequency)')
     c.execute('CREATE INDEX IF NOT EXISTS mmp_idx ON match_pct_counts '
@@ -236,7 +240,9 @@ def build_db(args):
     c.execute('CREATE INDEX IF NOT EXISTS isf_pop_mmpct_idx ON '
               'match_pct_counts (informative_site_frequency, population, '
               'max_match_pct)')
+    logging.debug("Analyzing")
     c.execute('ANALYZE')
+    logging.debug("Vacuuming")
     c.execute('VACUUM')
     dbconn.commit()
 
@@ -470,6 +476,7 @@ def max_match_pct(args):
 
     if args.chrom_sizes.isdigit():
         default_chromsize = int(args.chrom_sizes)
+        # TODO Make a default dict
         chrom_sizes = dict()
     else:
         default_chromsize = None
@@ -527,8 +534,6 @@ def chunks(reader, chunksize=10000):
             del chunk[:]
         chunk.append(line)
     yield chunk
-    # for i in range(0, len(data), rows):
-    #     yield data[i:i+rows]
 
 
 # Standard boilerplate to call the main() function to begin
