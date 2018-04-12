@@ -10,11 +10,11 @@ setup(
     packages=['archaic_match'],
     entry_points={
         'console_scripts': [
-            'archaic_match=archaic_match.__main__:main'
+            'archaic_match=archaic_match.__main__:main',
+            'column_replace=archaic_match.column_replace:main'
         ]
     },
     install_requires=[
-        'sqlalchemy',
         'numpy',
         'scipy',
         'matplotlib',

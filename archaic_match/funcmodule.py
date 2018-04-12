@@ -27,6 +27,15 @@ def get_chrom_sizes(filename):
     return d
 
 
+def tsv_to_dictionary(filename):
+    '''Return dictionary with first column as key and second as value'''
+    d = defaultdict()
+    with open(filename) as fin:
+        rows = (line.rstrip('\n').split('\t') for line in fin)
+        d = {row[0]: row[1] for row in rows}
+    return d
+
+
 Sample = namedtuple('Sample', ['name', 'population', 'superpopulation'])
 
 

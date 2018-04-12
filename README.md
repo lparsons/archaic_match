@@ -12,6 +12,11 @@ numpy must be installed before archaic_match.
     pip install archaic_match
 ```
 
+Other requirements
+*   sqlite3
+*   tabix
+
+
 ## Usage
 
 ### Calculate match percent counts to create null distribution database
@@ -47,14 +52,14 @@ match percents using windows that have an informative site frequency within
 
 ```
     archaic_match max-match-pct
-        --vcf=data/simulated_test/0.1pct/vcfs/Tenn_nonAfr_*_n1_0.1_n2_0.0.mod.vcf.gz
+        --vcf data/simulated_test/0.1pct/vcfs/Tenn_nonAfr_*_n1_0.1_n2_0.0.mod.vcf.gz
         --archaic-populations Neand1  # archaic population to match against
         --modern-populations EUR AFR  # populations to generate match percents for
         --chrom-sizes=1000000  # or file with chrom and size columns
-        --populations=data/simulated_test/null/Tenn.popfile  # file with columns for sample and population
-        [--window-size=[BP] (default: 50000)]
-        [--step-size=[BP] (default: 10000)]
+        --populations data/simulated_test/null/Tenn.popfile  # file with columns for sample and population
+        [--window-size [BP] (default: 50000)]
+        [--step-size [BP] (default: 10000)]
         --match-pct-database output/simulated_test/null_tables/afr_eur-vs-neand1/max_match_pct.db
-        [--frequency-threshold=[FLOAT] (default: 0.0005)]
+        [--frequency-threshold [FLOAT] (default: 0.0001)]
         > output/simulated_test/0.1_pct_pvalues.txt
 ```
