@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from collections import namedtuple
+from collections import defaultdict
 
 
 def my_function(text_to_display):
@@ -19,6 +20,7 @@ def get_samplename_list(query_populations, sample_populations):
 
 def get_chrom_sizes(filename):
     '''Return dictionary with seqid as key and length as value'''
+    d = defaultdict()
     with open(filename) as fin:
         rows = (line.split('\t') for line in fin)
         d = {row[0]: int(row[1]) for row in rows}

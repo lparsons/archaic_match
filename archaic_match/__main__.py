@@ -328,7 +328,7 @@ def calc_match_pct(informative_sites, archic_haplotypes, modern_haplotype):
 
 
 def calc_window_haplotype_match_pcts(
-        vcf_file, chrom_sizes, default_chromsize,
+        vcf_file, chrom_sizes,
         archaic_sample_list, modern_sample_list,
         window_size, step_size, frequency_threshold,
         dbconn=None, sample_populations=None):
@@ -340,7 +340,7 @@ def calc_window_haplotype_match_pcts(
                                         universal_newlines=True)
                          .stdout.split('\n'))
     for chrom in chromsomes_in_vcf:
-        chrom_size = chrom_sizes.get(chrom, default_chromsize)
+        chrom_size = chrom_sizes[chrom]
         if chrom is None:
             raise RuntimeError("Chromsome {} in vcf file but not in "
                                "chromsome sizes list".format(chrom))
@@ -395,8 +395,7 @@ def calc_window_haplotype_match_pcts(
                 end=window_coords[1],
                 informative_site_frequency=informative_site_frequency)
             window_isf_int = int(round(
-                window.informative_site_frequency
-                * window_size))
+                window.informative_site_frequency * window_size))
             threshold_int = int(round(frequency_threshold *
                                       window_size))
             logging.debug("Window: {}".format(region))
@@ -434,6 +433,13 @@ def calc_window_haplotype_match_pcts(
                         max_match_pct=max_match_pct,
                         dbconn=dbconn,
                         threshold=threshold_int)
+                    # TODO Calculate overlap with read optional region file
+                    # Read region file as data frame
+                    # Use SoretedIndex to store positions of informative_sites
+                    # (https://scikit-allel.readthedocs.io/en/latest/model/ndarray.html#sortedindex)
+                    # Lookup ranges that match chr and sample(haplotype)
+                    # Calculate range overlap
+                    # Use sortedindex to calculate informative_site overlaps
                     yield match_pct_window_pval(
                         chr=window.seqid,
                         start=window.start,
@@ -475,11 +481,8 @@ def max_match_pct(args):
     logging.debug("Modern sample list: {}".format(modern_sample_list))
 
     if args.chrom_sizes.isdigit():
-        default_chromsize = int(args.chrom_sizes)
-        # TODO Make a default dict
-        chrom_sizes = dict()
+        chrom_sizes = defaultdict(lambda: int(args.chrom_sizes))
     else:
-        default_chromsize = None
         chrom_sizes = get_chrom_sizes(args.chrom_sizes)
     logging.debug("Chromosome sizes: {}".format(chrom_sizes))
 
@@ -498,7 +501,6 @@ def max_match_pct(args):
     for vcf_file in vcf_filelist:
         window_haplotype_match_pcts = calc_window_haplotype_match_pcts(
             vcf_file=vcf_file, chrom_sizes=chrom_sizes,
-            default_chromsize=default_chromsize,
             archaic_sample_list=archaic_sample_list,
             modern_sample_list=modern_sample_list,
             window_size=args.window_size,
