@@ -61,5 +61,45 @@ match percents using windows that have an informative site frequency within
         [--step-size [BP] (default: 10000)]
         --match-pct-database output/simulated_test/null_tables/afr_eur-vs-neand1/max_match_pct.db
         [--frequency-threshold [FLOAT] (default: 0.0001)]
+        [--overlap-regions [BED_FILE]]
         > output/simulated_test/0.1_pct_pvalues.txt
+```
+
+#### Optional region overlap
+
+Specifying a bed file with regions will generate two additional
+output columns:
+
+*   `region_overlap_bp`: The number of basepairs of the window that
+    overlap an introgressed region.
+
+*   `region_informative_sites`: The number of informative sites in the
+    window that overlap an introgressed region.
+
+This is helpful for assessing the amount of a window that in known to be
+introgressed in simulated data.
+
+The format of the region bedfile should be a tab delimited file with the
+following columns:
+
+1.  Chromsome (sequence id where the region is located)
+2.  Start (zero based start position of the region)
+3.  End (one-based end position of the region)
+4.  Sample \[Optional\] (if specified, only windows associated with this
+    sample will be reported as having overlap)
+
+**Note for TreeCalls bedfiles**
+
+The TreeCalls bedfiles output by the *???* simulator should have the haplotype
+id converted into the associated sample name (e.g. 220 => msp_110). They
+should also be combined into a single bedfile. This can be accomplished using
+the included `column_replace` command (e.g.):
+
+```
+    column_replace \
+        data/simulated_test/0.05_pct/TreeCalls/Tenn_nonAfr_*_n1_0.05_n2_0.0.bed.merged.gz \
+        -d data/simulated_test/Tenn_haplotype_to_sample.txt \
+        -c 4 \
+        | sort -k 1,1 -k 2,2n \
+        > data/simulated_test/0/05_pct/TreeCalls/combined_introgressed_regions.bed
 ```

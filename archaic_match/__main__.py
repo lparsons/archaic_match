@@ -14,6 +14,7 @@ import subprocess
 import sys
 import functools
 import glob
+import pandas
 from collections import namedtuple
 from collections import defaultdict
 from .classmodule import Window
@@ -92,6 +93,13 @@ def main():
                               default=0.0001,
                               type=float,
                               metavar="THRESHOLD")
+    pvalue_group.add_argument(
+        "--overlap-regions",
+        required=False,
+        help="Report number of basepairs and number of informative sites "
+        "of each window that overlap these regions",
+        metavar="BED_FILE"
+    )
 
     # Window size options
     window_parser = argparse.ArgumentParser(
@@ -296,7 +304,8 @@ def windows_within_isf_threshold(informative_site_frequency, population,
 match_pct_window_pval = namedtuple(
     'match_pct_window_pval',
     ['chr', 'start', 'end', 'isf', 'isfd', 'haplotype', 'population',
-     'match_pct', 'pvalue', 'matching_windows'])
+     'match_pct', 'pvalue', 'matching_windows', 'overlap_bp',
+     'overlap_informative_sites'])
 
 
 match_pct_window = namedtuple(
@@ -331,7 +340,7 @@ def calc_window_haplotype_match_pcts(
         vcf_file, chrom_sizes,
         archaic_sample_list, modern_sample_list,
         window_size, step_size, frequency_threshold,
-        dbconn=None, sample_populations=None):
+        dbconn=None, sample_populations=None, overlap_regions=None):
     '''Generate match pct for each window for each modern haplotype'''
     # TODO Use pysam here
     # http://pysam.readthedocs.io/en/latest/api.html#pysam.TabixFile
@@ -360,6 +369,13 @@ def calc_window_haplotype_match_pcts(
                       .format(modern_sample_idx))
         genotype_array = allel.GenotypeArray(callset['calldata/GT'])
         variant_pos = callset['variants/POS']
+
+        logging.debug(overlap_regions)
+        if not overlap_regions.empty:
+            chrom_overlap_regions_bool = overlap_regions['chr'] == str(chrom)
+            chrom_overlap_regions = overlap_regions[chrom_overlap_regions_bool]
+        else:
+            chrom_overlap_regions = overlap_regions
         for window_coords in generate_windows(0, chrom_size,
                                               window_size,
                                               step_size):
@@ -371,6 +387,7 @@ def calc_window_haplotype_match_pcts(
             variants_in_region = numpy.where(numpy.logical_and(
                 variant_pos > window_coords[0],
                 variant_pos <= window_coords[1]))
+            variant_pos_in_region = variant_pos[variants_in_region]
             window_genotype_array = genotype_array.subset(
                 sel0=variants_in_region[0])
             allele_counts = (window_genotype_array
@@ -433,13 +450,11 @@ def calc_window_haplotype_match_pcts(
                         max_match_pct=max_match_pct,
                         dbconn=dbconn,
                         threshold=threshold_int)
-                    # TODO Calculate overlap with read optional region file
-                    # Read region file as data frame
-                    # Use SoretedIndex to store positions of informative_sites
-                    # (https://scikit-allel.readthedocs.io/en/latest/model/ndarray.html#sortedindex)
-                    # Lookup ranges that match chr and sample(haplotype)
-                    # Calculate range overlap
-                    # Use sortedindex to calculate informative_site overlaps
+                    # TODO Calculate overlap with optional region file
+                    (overlap_bp, overlap_informative_sites) = \
+                        calculate_overlap(
+                            chrom_overlap_regions, window, modern_haplotype_id,
+                            variant_pos_in_region[informative_sites])
                     yield match_pct_window_pval(
                         chr=window.seqid,
                         start=window.start,
@@ -452,7 +467,9 @@ def calc_window_haplotype_match_pcts(
                             .population),
                         match_pct=max_match_pct,
                         pvalue=pvalue,
-                        matching_windows=matching_windows)
+                        matching_windows=matching_windows,
+                        overlap_bp=overlap_bp,
+                        overlap_informative_sites=overlap_informative_sites)
                 else:
                     yield match_pct_window(
                         isfd=window_isf_int,
@@ -465,6 +482,40 @@ def calc_window_haplotype_match_pcts(
         logging.debug(
             "max_match_pct_pvalue.cache_info(): {}"
             .format(max_match_pct_pvalue.cache_info()))
+
+
+def calculate_overlap(chrom_overlap_regions, window, modern_haplotype_id,
+                      informative_site_positions):
+    overlapping_bp = 0
+    overlapping_informative_sites = list()
+    if not chrom_overlap_regions.empty:
+        sample_chrom_overlap_regions = (
+            chrom_overlap_regions
+            [chrom_overlap_regions['sample'] == modern_haplotype_id])
+        if not sample_chrom_overlap_regions.empty:
+            logging.debug("Overlap regions in chrom:\n{}".format(
+                chrom_overlap_regions))
+            logging.debug("Window: {}".format(window.start))
+            overlapping_regions = sample_chrom_overlap_regions[
+                (chrom_overlap_regions['start'] <= window.end) &
+                (chrom_overlap_regions['end'] >= window.start)]
+            logging.debug("Overlapping regions for window:\n{}".format(
+                overlapping_regions))
+            overlapping_bp = 0
+            for index, region in overlapping_regions.iterrows():
+                logging.debug(region)
+                overlap = (min(region['end'], window.end) -
+                           max(region['start'], window.start))
+                overlapping_bp += overlap
+            logging.debug("Informative site positions: {}".format(
+                informative_site_positions))
+            informative_site_index = allel.SortedIndex(
+                informative_site_positions)
+            overlapping_informative_sites = (
+                informative_site_index.intersect_ranges(
+                    starts=overlapping_regions['start'],
+                    stops=overlapping_regions['end']))
+    return(overlapping_bp, len(overlapping_informative_sites))
 
 
 def max_match_pct(args):
@@ -496,8 +547,25 @@ def max_match_pct(args):
         vcf_filelist.extend(glob.glob(vcf_file_pattern))
     logging.debug("VCF File list:\n{}".format(vcf_filelist))
     match_pct_window_counts = defaultdict(int)
+    overlap_regions = None
     if dbconn:
-        print("\t".join(match_pct_window_pval._fields))
+        if args.overlap_regions:
+            fields = match_pct_window_pval._fields
+        else:
+            fields = match_pct_window_pval._fields[:-2]
+        print("\t".join(fields))
+        region_colnames = ['chr', 'start', 'end', 'sample']
+        region_dtypes = {'chr': object,
+                         'start': int,
+                         'end': int,
+                         'sample': object}
+        if args.overlap_regions:
+            overlap_regions = pandas.read_table(args.overlap_regions,
+                                                header=None,
+                                                names=region_colnames,
+                                                dtype=region_dtypes)
+        else:
+            overlap_regions = pandas.DataFrame(columns=region_colnames)
     for vcf_file in vcf_filelist:
         window_haplotype_match_pcts = calc_window_haplotype_match_pcts(
             vcf_file=vcf_file, chrom_sizes=chrom_sizes,
@@ -507,13 +575,20 @@ def max_match_pct(args):
             step_size=args.step_size,
             frequency_threshold=args.frequency_threshold,
             dbconn=dbconn,
-            sample_populations=sample_populations)
+            sample_populations=sample_populations,
+            overlap_regions=overlap_regions)
         if dbconn:
             for window_haplotype_match_pct in window_haplotype_match_pcts:
-                print("{chr}\t{start}\t{end}\t{isf:.6f}\t{isfd:d}\t"
-                      "{haplotype}\t{population}\t{match_pct}\t"
-                      "{pvalue}\t{matching_windows}"
-                      .format(**window_haplotype_match_pct._asdict()))
+                sys.stdout.write(
+                    "{chr}\t{start}\t{end}\t{isf:.6f}\t{isfd:d}\t"
+                    "{haplotype}\t{population}\t{match_pct}\t"
+                    "{pvalue}\t{matching_windows}"
+                    .format(**window_haplotype_match_pct._asdict()))
+                if args.overlap_regions:
+                    sys.stdout.write(
+                        "\t{overlap_bp}\t{overlap_informative_sites}"
+                        .format(**window_haplotype_match_pct._asdict()))
+                sys.stdout.write("\n")
         else:
             for window_haplotype_match_pct in window_haplotype_match_pcts:
                 match_pct_window_counts[window_haplotype_match_pct] += 1
