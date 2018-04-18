@@ -165,10 +165,6 @@ def main():
         required=True,
         metavar='DB_FILE'
         )
-    # parser_max_match_pct_pvalue = subparsers.add_parser(
-    #     'max-match-pct-pvalue',
-    #     parents=[input_parser, window_parser])
-    # parser_max_match_pct_pvalue.set_defaults(func=max_match_pct_pvalue)
 
     # Parse arguments
     args = parent_parser.parse_args()
