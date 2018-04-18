@@ -367,7 +367,7 @@ def calc_window_haplotype_match_pcts(
         variant_pos = callset['variants/POS']
 
         logging.debug(overlap_regions)
-        if not overlap_regions.empty:
+        if (overlap_regions is not None) and (not overlap_regions.empty):
             chrom_overlap_regions_bool = overlap_regions['chr'] == str(chrom)
             chrom_overlap_regions = overlap_regions[chrom_overlap_regions_bool]
         else:
