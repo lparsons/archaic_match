@@ -1,12 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import logging
 from collections import namedtuple
 from collections import defaultdict
-
-
-def my_function(text_to_display):
-    print('text from my_function :: {}'.format(text_to_display))
 
 
 def get_samplename_list(query_populations, sample_populations):
@@ -53,3 +50,44 @@ def generate_windows(start, end, size, step):
     for winstart in range(start, end, step):
         winend = min(winstart + size, end)
         yield (winstart, winend)
+
+
+def get_informative_sites(allele_counts, method):
+    """
+    Determine which sites are considered informative
+    subpopulation allele counts for "archaic" and "modern"
+
+    Parameters
+    ----------
+    allele_counts : dict (string -> AlleleCountsArray)
+    method : str
+        One of `derived_in_archaic` or `derived_in_archaic_or_modern`
+
+    Returns
+    -------
+    out : ndarray, bool, shape (n_variants,)
+    """
+
+    if method == "derived_in_archaic":
+        informative_sites = allele_counts['archaic'].is_variant()
+        logging.debug("Informative site method: {}".format(method))
+        logging.debug("Number of archic variant sites: {}".format(
+            sum(informative_sites)))
+        logging.debug("Number of informative sites: {}".format(
+            sum(informative_sites)))
+    elif method == "derived_in_archaic_or_modern":
+        archaic_variant_sites = allele_counts['archaic'].is_variant()
+        modern_variant_sites = allele_counts['modern'].is_variant()
+        informative_sites = (archaic_variant_sites | modern_variant_sites)
+        logging.debug("Informative site method: {}".format(method))
+        logging.debug("Number of archic variant sites: {}".format(
+            sum(archaic_variant_sites)))
+        logging.debug("Number of modern variant sites: {}".format(
+            sum(modern_variant_sites)))
+        logging.debug("Number of informative sites: {}".format(
+            sum(informative_sites)))
+    else:
+        raise RuntimeError("Informative site method '{}' is not supported",
+                           method)
+
+    return informative_sites

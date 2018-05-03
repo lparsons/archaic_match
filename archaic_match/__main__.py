@@ -22,9 +22,10 @@ from .funcmodule import get_samplename_list
 from .funcmodule import get_chrom_sizes
 from .funcmodule import generate_windows
 from .funcmodule import get_sample_populations
+from .funcmodule import get_informative_sites
 
 
-__version__ = "0.1"
+__version__ = "0.2"
 __author__ = "Lance Parsons"
 __author_email__ = "lparsons@princeton.edu"
 __copyright__ = "Copyright 2018, Lance Parsons"
@@ -117,6 +118,18 @@ def main():
                               default="10000",
                               type=int)
 
+    # Algoritmic options
+    algorithm_parser = argparse.ArgumentParser(
+        add_help=False,
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    algorithm_group = algorithm_parser.add_argument_group('Algorithm options')
+    algorithm_group.add_argument("--informative-site-method",
+                                 help=("Specify method used to define "
+                                       "sites"),
+                                 default="derived_in_archaic",
+                                 choices=["derived_in_archaic",
+                                          "dervived_in_archaic_or_modern"])
+
     # Output file options
     # output = parser.add_argument_group('Output files')
     # output.add_argument("windows_file",
@@ -144,6 +157,7 @@ def main():
         help="Calculate match percent values for modern haplotypes")
     parser_max_match_pct.set_defaults(func=max_match_pct)
 
+    # Build database subcommand
     build_db_parser = subparsers.add_parser(
         'build-db',
         parents=[common_options],
@@ -335,6 +349,7 @@ def calc_window_haplotype_match_pcts(
         vcf_file, chrom_sizes,
         archaic_sample_list, modern_sample_list,
         window_size, step_size, frequency_threshold,
+        informative_site_method,
         dbconn=None, sample_populations=None, overlap_regions=None):
     '''Generate match pct for each window for each modern haplotype'''
     # TODO Use pysam here
@@ -389,16 +404,8 @@ def calc_window_haplotype_match_pcts(
                              .count_alleles_subpops(subpops={
                                  'archaic': archaic_sample_idx,
                                  'modern': modern_sample_idx}))
-            # Find variants with at least one non-reference allele call
-            archaic_variant_sites = allele_counts['archaic'].is_variant()
-            # Find segregating variants (where more than one allele is
-            # observed)
-            modern_segregating_sites = (allele_counts['modern']
-                                        .is_segregating())
-
-            # Account for masked bases in window
-            informative_sites = (archaic_variant_sites
-                                 & modern_segregating_sites)
+            informative_sites = get_informative_sites(
+                allele_counts, informative_site_method)
             informative_site_frequency = (sum(informative_sites)
                                           / window_length)
             window = Window(
@@ -410,14 +417,6 @@ def calc_window_haplotype_match_pcts(
                 window.informative_site_frequency * window_size))
             threshold_int = int(round(frequency_threshold
                                       * window_size))
-            logging.debug("Window: {}".format(region))
-            logging.debug("Number of archic variant sites: {}".format(
-                          sum(archaic_variant_sites)))
-            logging.debug("Number of modern segregating sites: {}".format(
-                          sum(modern_segregating_sites)))
-            logging.debug("Number of informative sites: {}"
-                          .format(sum(informative_sites)))
-            # windows_file.write("{}\n".format(window.to_bed()))
 
             # For each modern haplotype, compare to each archaic haplotype
             modern_haplotypes = allel.HaplotypeArray(
