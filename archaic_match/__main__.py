@@ -158,13 +158,13 @@ def main():
         required=True,
         nargs='+',
         metavar='FILE'
-        )
+    )
     build_req_args.add_argument(
         "--db",
         help="Database file",
         required=True,
         metavar='DB_FILE'
-        )
+    )
 
     # Parse arguments
     args = parent_parser.parse_args()
@@ -323,10 +323,9 @@ def calc_match_pct(informative_sites, archic_haplotypes, modern_haplotype):
             match_pct = 0
         else:
             match_pct = (
-                numpy.sum(informative_sites &
-                          (modern_haplotype ==
-                           archic_haplotype)) /
-                numpy.sum(informative_sites))
+                numpy.sum(informative_sites
+                          & (modern_haplotype == archic_haplotype))
+                / numpy.sum(informative_sites))
         if match_pct > max_match_pct:
             max_match_pct = match_pct
     return max_match_pct
@@ -398,10 +397,10 @@ def calc_window_haplotype_match_pcts(
                                         .is_segregating())
 
             # Account for masked bases in window
-            informative_sites = (archaic_variant_sites &
-                                 modern_segregating_sites)
-            informative_site_frequency = (sum(informative_sites) /
-                                          window_length)
+            informative_sites = (archaic_variant_sites
+                                 & modern_segregating_sites)
+            informative_site_frequency = (sum(informative_sites)
+                                          / window_length)
             window = Window(
                 seqid=chrom,
                 start=window_coords[0],
@@ -409,8 +408,8 @@ def calc_window_haplotype_match_pcts(
                 informative_site_frequency=informative_site_frequency)
             window_isf_int = int(round(
                 window.informative_site_frequency * window_size))
-            threshold_int = int(round(frequency_threshold *
-                                      window_size))
+            threshold_int = int(round(frequency_threshold
+                                      * window_size))
             logging.debug("Window: {}".format(region))
             logging.debug("Number of archic variant sites: {}".format(
                           sum(archaic_variant_sites)))
@@ -493,15 +492,15 @@ def calculate_overlap(chrom_overlap_regions, window, modern_haplotype_id,
                 chrom_overlap_regions))
             logging.debug("Window: {}".format(window.start))
             overlapping_regions = sample_chrom_overlap_regions[
-                (chrom_overlap_regions['start'] <= window.end) &
-                (chrom_overlap_regions['end'] >= window.start)]
+                (chrom_overlap_regions['start'] <= window.end)
+                & (chrom_overlap_regions['end'] >= window.start)]
             logging.debug("Overlapping regions for window:\n{}".format(
                 overlapping_regions))
             overlapping_bp = 0
             for index, region in overlapping_regions.iterrows():
                 logging.debug(region)
-                overlap = (min(region['end'], window.end) -
-                           max(region['start'], window.start))
+                overlap = (min(region['end'], window.end)
+                           - max(region['start'], window.start))
                 overlapping_bp += overlap
             logging.debug("Informative site positions: {}".format(
                 informative_site_positions))

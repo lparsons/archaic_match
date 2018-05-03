@@ -16,17 +16,10 @@ setup(
     },
     install_requires=[
         'numpy',
-        'scipy',
         'matplotlib',
         'seaborn',
         'pandas',
-        'scikit-learn',
         'h5py!=2.7.0,!=2.7.1',  # These versions issue warnings when imported
-        'numexpr',
-        'bcolz',
-        'zarr',
-        'dask',
-        'cytoolz',
-        'scikit-allel'
+        'scikit-allel>=1.1.10'
     ]
-        )
+)

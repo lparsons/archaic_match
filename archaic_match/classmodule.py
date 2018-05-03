@@ -12,6 +12,7 @@ class MyClass():
 
 class Window():
     """docstring for [object Object]."""
+
     def __init__(self, seqid, start, end, informative_site_frequency):
         self.seqid = seqid
         self.start = start
