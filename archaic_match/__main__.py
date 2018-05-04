@@ -327,22 +327,15 @@ match_pct_window = namedtuple(
 #     ['isfd', 'population', 'match_pct', 'count'])
 
 
-def calc_match_pct(informative_sites, archic_haplotypes, modern_haplotype):
+def calc_match_pct(informative_sites, archaic_haplotypes, modern_haplotype):
     '''Cacluate maximum match percent of modern haplotype to archaic
     haplotypes'''
-    max_match_pct = 0
-    for archic_haplotype in archic_haplotypes.T:
-        num_informative_sites = numpy.sum(informative_sites)
-        if num_informative_sites == 0:
-            match_pct = 0
-        else:
-            match_pct = (
-                numpy.sum(informative_sites
-                          & (modern_haplotype == archic_haplotype))
-                / numpy.sum(informative_sites))
-        if match_pct > max_match_pct:
-            max_match_pct = match_pct
-    return max_match_pct
+    archaic_is_derived = archaic_haplotypes.count_alleles().is_variant()
+    modern_is_derived = modern_haplotype > 0
+    match_pct = numpy.sum(
+        (informative_sites & archaic_is_derived & modern_is_derived)
+        / numpy.sum(informative_sites))
+    return match_pct
 
 
 def calc_window_haplotype_match_pcts(

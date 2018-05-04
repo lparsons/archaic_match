@@ -3,6 +3,7 @@ import allel
 # from allel.test.tools import assert_array_equal as aeq
 import numpy as np
 from archaic_match.funcmodule import get_informative_sites
+from archaic_match.__main__ import calc_match_pct
 
 
 genotype_array = allel.GenotypeArray([
@@ -82,6 +83,13 @@ subpops = {'archaic': archaic_sample_idx,
            'modern': modern_sample_idx}
 
 allele_counts = genotype_array.count_alleles_subpops(subpops=subpops)
+
+modern_haplotypes = allel.HaplotypeArray(
+    genotype_array[:, modern_sample_idx]
+    .flatten().reshape(-1, len(modern_sample_idx) * 2))
+archic_haplotypes = allel.HaplotypeArray(
+    genotype_array[:, archaic_sample_idx]
+    .flatten().reshape(-1, len(archaic_sample_idx) * 2))
 
 archaic_allele_counts = allel.AlleleCountsArray([
     [2, 0],
@@ -300,7 +308,22 @@ def test_get_informative_sites_derived_in_archaic():
 
 
 def test_get_informative_sites_derived_in_archaic_or_modern():
-    print(get_informative_sites(allele_counts, "derived_in_archaic_or_modern"))
     assert np.array_equal(
         get_informative_sites(allele_counts, "derived_in_archaic_or_modern"),
         informative_sites_derived_in_archaic_or_modern)
+
+
+def test_calc_match_pct_derived_in_archaic():
+    assert (calc_match_pct(
+            informative_sites_derived_in_archaic,
+            archic_haplotypes,
+            modern_haplotypes.T[1, ]
+            ) == (24 / 48))
+
+
+def test_calc_match_pct_derived_in_archaic_or_modern():
+    assert (calc_match_pct(
+            informative_sites_derived_in_archaic_or_modern,
+            archic_haplotypes,
+            modern_haplotypes.T[1, ]
+            ) == (24 / 63))
