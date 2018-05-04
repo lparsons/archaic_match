@@ -15,9 +15,9 @@ import sys
 import functools
 import glob
 import pandas
+import numpy as np
 from collections import namedtuple
 from collections import defaultdict
-from .classmodule import Window
 from .funcmodule import get_samplename_list
 from .funcmodule import get_chrom_sizes
 from .funcmodule import generate_windows
@@ -85,13 +85,13 @@ def main():
                               "of archaic match percents for various windows "
                               "from population with no intregression",
                               metavar="SQLITE_FILE")
-    pvalue_group.add_argument("--frequency-threshold",
+    pvalue_group.add_argument("--informative-site-threshold",
                               required=False,
                               help="Use windows from the database that have "
                               "informative site frequencies within THRESHOLD "
                               "of the query windows informative site "
                               "frequency to determine the null distribution",
-                              default=0.0001,
+                              default=0,
                               type=float,
                               metavar="THRESHOLD")
     pvalue_group.add_argument(
@@ -128,7 +128,7 @@ def main():
                                        "sites"),
                                  default="derived_in_archaic",
                                  choices=["derived_in_archaic",
-                                          "dervived_in_archaic_or_modern"])
+                                          "derived_in_archaic_or_modern"])
 
     # Output file options
     # output = parser.add_argument_group('Output files')
@@ -150,12 +150,13 @@ def main():
     subparsers = parent_parser.add_subparsers(
         help="commands")
 
-    parser_max_match_pct = subparsers.add_parser(
+    parser_match_pct = subparsers.add_parser(
         'max-match-pct',
-        parents=[input_parser, window_parser, common_options],
+        parents=[input_parser, window_parser, algorithm_parser,
+                 common_options],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         help="Calculate match percent values for modern haplotypes")
-    parser_max_match_pct.set_defaults(func=max_match_pct)
+    parser_match_pct.set_defaults(func=match_pct)
 
     # Build database subcommand
     build_db_parser = subparsers.add_parser(
@@ -210,17 +211,19 @@ def build_db(args):
     c = dbconn.cursor()
     c.execute('DROP TABLE IF EXISTS match_pct_counts')
     c.execute('CREATE TABLE match_pct_counts('
-              'informative_site_frequency INTEGER, '
+              'window_size INTEGER, '
+              'informative_site_count INTEGER, '
               'population TEXT, '
-              'max_match_pct REAL, '
+              'match_pct REAL, '
               'count INTEGER)')
 
     logging.debug("Creating tmp table")
     c.execute('DROP TABLE IF EXISTS tmp')
     c.execute('CREATE TABLE tmp('
-              'informative_site_frequency INTEGER, '
+              'window_size INTEGER, '
+              'informative_site_count INTEGER, '
               'population TEXT, '
-              'max_match_pct REAL, '
+              'match_pct REAL, '
               'count INTEGER)')
     for count_file in count_filelist:
         logging.debug("Loading file '{}'".format(count_file))
@@ -228,33 +231,35 @@ def build_db(args):
         divData = chunks(tsvData)  # divide into 10000 rows each
         for chunk in divData:
             c.executemany('INSERT OR IGNORE INTO tmp '
-                          '(informative_site_frequency, population, '
-                          'max_match_pct, count) '
-                          'VALUES (?,?,?,?)', chunk)
+                          '(window_size, informative_site_count, population, '
+                          'match_pct, count) '
+                          'VALUES (?,?,?,?,?)', chunk)
     dbconn.commit()
 
     logging.debug("Summarize temp data into match_pct_counts from tmp table")
     c.execute('insert into match_pct_counts '
-              '(informative_site_frequency, population, '
-              'max_match_pct, count) '
-              'select distinct informative_site_frequency, '
-              'population, max_match_pct, sum(count) from tmp '
-              'group by informative_site_frequency, population, '
-              'max_match_pct')
+              '(window_size, informative_site_count, population, '
+              'match_pct, count) '
+              'select distinct window_size, informative_site_count, '
+              'population, match_pct, sum(count) from tmp '
+              'group by window_size, informative_site_count, population, '
+              'match_pct')
     dbconn.commit()
     c.execute('DROP TABLE tmp')
     logging.debug("Creating indexes")
-    c.execute('CREATE INDEX IF NOT EXISTS isf_idx ON match_pct_counts '
-              '(informative_site_frequency)')
+    c.execute('CREATE INDEX IF NOT EXISTS window_size_idx ON match_pct_counts '
+              '(window_size)')
+    c.execute('CREATE INDEX IF NOT EXISTS isc_idx ON match_pct_counts '
+              '(informative_site_count)')
     c.execute('CREATE INDEX IF NOT EXISTS mmp_idx ON match_pct_counts '
-              '(max_match_pct)')
+              '(match_pct)')
     c.execute('CREATE INDEX IF NOT EXISTS pop_idx ON match_pct_counts '
               '(population)')
-    c.execute('CREATE INDEX IF NOT EXISTS isf_pop_idx ON match_pct_counts '
-              '(informative_site_frequency, population)')
-    c.execute('CREATE INDEX IF NOT EXISTS isf_pop_mmpct_idx ON '
-              'match_pct_counts (informative_site_frequency, population, '
-              'max_match_pct)')
+    c.execute('CREATE INDEX IF NOT EXISTS ws_isc_pop_idx ON match_pct_counts '
+              '(window_size, informative_site_count, population)')
+    c.execute('CREATE INDEX IF NOT EXISTS ws_isc_pop_mmpct_idx ON '
+              'match_pct_counts (window_size, informative_site_count, '
+              'population, match_pct)')
     logging.debug("Analyzing")
     c.execute('ANALYZE')
     logging.debug("Vacuuming")
@@ -263,23 +268,32 @@ def build_db(args):
 
 
 @functools.lru_cache(maxsize=None)
-def max_match_pct_pvalue(informative_site_frequency, population,
-                         max_match_pct, dbconn, threshold):
+def match_pct_pvalue(window_size, informative_site_count, population,
+                     match_pct, dbconn, threshold):
     '''Calculate emperical pvalue from windows in database'''
-    lower_threshold = informative_site_frequency - threshold
-    upper_threshold = informative_site_frequency + threshold
-    n = windows_within_isf_threshold(
-        informative_site_frequency=informative_site_frequency,
+    if np.equal(np.mod(threshold, 1), 0):
+        informative_site_range = threshold
+    else:
+        informative_site_range = informative_site_count * threshold
+    lower_threshold = informative_site_count - informative_site_range
+    upper_threshold = informative_site_count + informative_site_range
+
+    n = windows_within_isc_threshold(
+        window_size=window_size,
+        informative_site_count=informative_site_count,
         population=population,
-        threshold=threshold,
+        lower_threshold=lower_threshold,
+        upper_threshold=upper_threshold,
         dbconn=dbconn)
     c = dbconn.cursor()
     c.execute('''SELECT sum(count) from match_pct_counts
-              where informative_site_frequency >= ?
-              and informative_site_frequency <= ?
+              where window_size = ?
+              and informative_site_count >= ?
+              and informative_site_count <= ?
               and population = ?
-              and max_match_pct >= ?''',
-              (lower_threshold, upper_threshold, population, max_match_pct))
+              and match_pct >= ?''',
+              (window_size, lower_threshold, upper_threshold, population,
+               match_pct))
     s = c.fetchone()[0]
     if s is None:
         s = 0
@@ -289,34 +303,41 @@ def max_match_pct_pvalue(informative_site_frequency, population,
 
 
 @functools.lru_cache(maxsize=None)
-def windows_within_isf_threshold(informative_site_frequency, population,
-                                 threshold, dbconn):
+def windows_within_isc_threshold(window_size, informative_site_count,
+                                 population, lower_threshold, upper_threshold,
+                                 dbconn):
     '''Return number of windows for a given population within the informative
     site frequency threshold'''
-    lower_threshold = informative_site_frequency - threshold
-    upper_threshold = informative_site_frequency + threshold
     c = dbconn.cursor()
     c.execute('''SELECT sum(count) from match_pct_counts
-              where informative_site_frequency >= ?
-              and informative_site_frequency <= ?
+              where window_size = ?
+              and informative_site_count >= ?
+              and informative_site_count <= ?
               and population = ?''',
-              (lower_threshold, upper_threshold, population))
+              (window_size, lower_threshold, upper_threshold, population))
     n = c.fetchone()[0]
     if n is None:
         n = 0
     n = float(n)
+    logging.debug("Query: {}, {}, {}, {}".format(
+        window_size, lower_threshold, upper_threshold, population)
+    )
+    logging.debug("{} matching windows found".format(n))
+    logging.debug("{} matching windows found".format(n))
+    logging.debug("{} matching windows found".format(n))
+    logging.debug("{} matching windows found".format(n))
     return n
 
 
 match_pct_window_pval = namedtuple(
     'match_pct_window_pval',
-    ['chr', 'start', 'end', 'isf', 'isfd', 'haplotype', 'population',
+    ['chr', 'start', 'end', 'isc', 'haplotype', 'population',
      'match_pct', 'pvalue', 'matching_windows', 'overlap_bp',
      'overlap_informative_sites'])
 
 
 match_pct_window = namedtuple(
-    'match_pct_window', ['isfd', 'population', 'match_pct'])
+    'match_pct_window', ['size', 'isc', 'population', 'match_pct'])
 
 
 # match_pct_window_counts = namedtuple(
@@ -338,7 +359,7 @@ def calc_match_pct(informative_sites, archaic_haplotypes, modern_haplotype):
 def calc_window_haplotype_match_pcts(
         vcf_file, chrom_sizes,
         archaic_sample_list, modern_sample_list,
-        window_size, step_size, frequency_threshold,
+        window_size, step_size, informative_site_threshold,
         informative_site_method,
         dbconn=None, sample_populations=None, overlap_regions=None):
     '''Generate match pct for each window for each modern haplotype'''
@@ -376,17 +397,11 @@ def calc_window_haplotype_match_pcts(
             chrom_overlap_regions = overlap_regions[chrom_overlap_regions_bool]
         else:
             chrom_overlap_regions = overlap_regions
-        for window_coords in generate_windows(0, chrom_size,
-                                              window_size,
-                                              step_size):
-            region = "{seq}:{start:d}-{end:d}".format(
-                seq=chrom, start=window_coords[0], end=window_coords[1]
-            )
-            logging.debug("window region: {}".format(region))
-            window_length = window_coords[1] - window_coords[0]
+        for window in generate_windows(chrom, 0, chrom_size,
+                                       window_size, step_size):
+            logging.debug("window region: {}".format(window.region_string))
             variants_in_region = numpy.where(numpy.logical_and(
-                variant_pos > window_coords[0],
-                variant_pos <= window_coords[1]))
+                variant_pos > window.start, variant_pos <= window.end))
             variant_pos_in_region = variant_pos[variants_in_region]
             window_genotype_array = genotype_array.subset(
                 sel0=variants_in_region[0])
@@ -396,17 +411,9 @@ def calc_window_haplotype_match_pcts(
                                  'modern': modern_sample_idx}))
             informative_sites = get_informative_sites(
                 allele_counts, informative_site_method)
-            informative_site_frequency = (sum(informative_sites)
-                                          / window_length)
-            window = Window(
-                seqid=chrom,
-                start=window_coords[0],
-                end=window_coords[1],
-                informative_site_frequency=informative_site_frequency)
-            window_isf_int = int(round(
-                window.informative_site_frequency * window_size))
-            threshold_int = int(round(frequency_threshold
-                                      * window_size))
+            logging.debug("informative_sites:\n{}\n{}".format(
+                informative_sites, numpy.where(informative_sites)))
+            window.informative_site_count = sum(informative_sites)
 
             # For each modern haplotype, compare to each archaic haplotype
             modern_haplotypes = allel.HaplotypeArray(
@@ -422,18 +429,20 @@ def calc_window_haplotype_match_pcts(
                 modern_haplotype_id = "{sample}:{idx}".format(
                     sample=modern_sample,
                     idx=hap_idx % 2)
-
-                max_match_pct = calc_match_pct(
+                match_pct = calc_match_pct(
                     informative_sites, archic_haplotypes, modern_haplotype)
+                logging.debug("modern haplotype {} | match_pct {}".format(
+                    modern_haplotype_id, match_pct))
 
                 if dbconn:
-                    (pvalue, matching_windows) = max_match_pct_pvalue(
-                        window_isf_int,
+                    (pvalue, matching_windows) = match_pct_pvalue(
+                        window_size=window.size,
+                        informative_site_count=window.informative_site_count,
                         population=(sample_populations[modern_sample]
                                     .population),
-                        max_match_pct=max_match_pct,
+                        match_pct=match_pct,
                         dbconn=dbconn,
-                        threshold=threshold_int)
+                        threshold=informative_site_threshold)
                     # TODO Calculate overlap with optional region file
                     (overlap_bp, overlap_informative_sites) = \
                         calculate_overlap(
@@ -443,29 +452,29 @@ def calc_window_haplotype_match_pcts(
                         chr=window.seqid,
                         start=window.start,
                         end=window.end,
-                        isf=window.informative_site_frequency,
-                        isfd=window_isf_int,
+                        isc=window.informative_site_count,
                         haplotype=modern_haplotype_id,
                         population=(
                             sample_populations[modern_sample]
                             .population),
-                        match_pct=max_match_pct,
+                        match_pct=match_pct,
                         pvalue=pvalue,
                         matching_windows=matching_windows,
                         overlap_bp=overlap_bp,
                         overlap_informative_sites=overlap_informative_sites)
                 else:
                     yield match_pct_window(
-                        isfd=window_isf_int,
+                        size=window.size,
+                        isc=window.informative_site_count,
                         population=sample_populations[modern_sample]
                         .population,
-                        match_pct=max_match_pct)
+                        match_pct=match_pct)
         logging.debug(
-            "windows_within_isf_threshold.cache_info(): {}"
-            .format(windows_within_isf_threshold.cache_info()))
+            "windows_within_isc_threshold.cache_info(): {}"
+            .format(windows_within_isc_threshold.cache_info()))
         logging.debug(
-            "max_match_pct_pvalue.cache_info(): {}"
-            .format(max_match_pct_pvalue.cache_info()))
+            "match_pct_pvalue.cache_info(): {}"
+            .format(match_pct_pvalue.cache_info()))
 
 
 def calculate_overlap(chrom_overlap_regions, window, modern_haplotype_id,
@@ -502,7 +511,7 @@ def calculate_overlap(chrom_overlap_regions, window, modern_haplotype_id,
     return(overlapping_bp, len(overlapping_informative_sites))
 
 
-def max_match_pct(args):
+def match_pct(args):
 
     sample_populations = get_sample_populations(args.populations)
     logging.debug("Sample populations: {}".format(sample_populations))
@@ -557,14 +566,15 @@ def max_match_pct(args):
             modern_sample_list=modern_sample_list,
             window_size=args.window_size,
             step_size=args.step_size,
-            frequency_threshold=args.frequency_threshold,
+            informative_site_threshold=args.informative_site_threshold,
+            informative_site_method=args.informative_site_method,
             dbconn=dbconn,
             sample_populations=sample_populations,
             overlap_regions=overlap_regions)
         if dbconn:
             for window_haplotype_match_pct in window_haplotype_match_pcts:
                 sys.stdout.write(
-                    "{chr}\t{start}\t{end}\t{isf:.6f}\t{isfd:d}\t"
+                    "{chr}\t{start}\t{end}\t{isc:d}\t"
                     "{haplotype}\t{population}\t{match_pct}\t"
                     "{pvalue}\t{matching_windows}"
                     .format(**window_haplotype_match_pct._asdict()))
@@ -575,10 +585,11 @@ def max_match_pct(args):
                 sys.stdout.write("\n")
         else:
             for window_haplotype_match_pct in window_haplotype_match_pcts:
+                logging.debug(window_haplotype_match_pct)
                 match_pct_window_counts[window_haplotype_match_pct] += 1
     if not dbconn:
         for w in match_pct_window_counts.keys():
-            print("{isfd}\t{population}\t{match_pct}\t{count}"
+            print("{size}\t{isc}\t{population}\t{match_pct}\t{count}"
                   .format(**w._asdict(), count=match_pct_window_counts[w]))
     sys.stdout.flush()
 

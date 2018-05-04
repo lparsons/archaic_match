@@ -4,6 +4,7 @@
 import logging
 from collections import namedtuple
 from collections import defaultdict
+from .classmodule import Window
 
 
 def get_samplename_list(query_populations, sample_populations):
@@ -45,11 +46,11 @@ def get_sample_populations(filename):
     return d
 
 
-def generate_windows(start, end, size, step):
-    '''Return list of windows as tuples'''
+def generate_windows(seqid, start, end, size, step):
+    '''Generate windows stepping along chromosome'''
     for winstart in range(start, end, step):
         winend = min(winstart + size, end)
-        yield (winstart, winend)
+        yield Window(seqid, winstart, winend)
 
 
 def get_informative_sites(allele_counts, method):
