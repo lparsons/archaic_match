@@ -227,14 +227,11 @@ def build_db(args):
         tsvData = csv.reader(open(count_file, "rU"), delimiter="\t")
         divData = chunks(tsvData)  # divide into 10000 rows each
         for chunk in divData:
-            c.execute('BEGIN TRANSACTION')
-            for field1, field2, field3, field4 in chunk:
-                c.execute('INSERT OR IGNORE INTO tmp '
+            c.executemany('INSERT OR IGNORE INTO tmp '
                           '(informative_site_frequency, population, '
                           'max_match_pct, count) '
-                          'VALUES (?,?,?,?)',
-                          (field1, field2, field3, field4))
-            c.execute('COMMIT')
+                          'VALUES (?,?,?,?)', chunk)
+    dbconn.commit()
 
     logging.debug("Summarize temp data into match_pct_counts from tmp table")
     c.execute('insert into match_pct_counts '
