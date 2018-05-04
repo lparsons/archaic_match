@@ -2,6 +2,8 @@
 
 Calculate archaic match percent for haplotype windows
 
+[![CircleCI](https://circleci.com/gh/lparsons/archaic_match.svg?style=svg)](https://circleci.com/gh/lparsons/archaic_match)
+
 ## Installation
 
 Due to an [issue with scikit-allel installation](https://github.com/cggh/scikit-allel/issues/177)
