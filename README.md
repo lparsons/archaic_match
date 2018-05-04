@@ -11,7 +11,7 @@ numpy must be installed before archaic_match.
 
 ```
     pip install numpy
-    pip install archaic_match
+    pip install git+https://github.com/lparsons/archaic_match
 ```
 
 Other requirements
