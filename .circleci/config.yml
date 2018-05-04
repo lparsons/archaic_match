@@ -48,7 +48,7 @@ jobs:
             . venv/bin/activate
             pip install -e .
             mkdir test-reports
-            pytest --junitxml=test-reports/junit.xml
+            pytest --junitxml=test-reports/junit.xml --codestyle --flakes
 
       - store_test_results:
           path: test-reports
