@@ -15,7 +15,6 @@ import sys
 import functools
 import glob
 import pandas
-import numpy as np
 from collections import namedtuple
 from collections import defaultdict
 from .funcmodule import get_samplename_list
@@ -85,15 +84,17 @@ def main():
                               "of archaic match percents for various windows "
                               "from population with no intregression",
                               metavar="SQLITE_FILE")
-    pvalue_group.add_argument("--informative-site-threshold",
+    pvalue_group.add_argument("--informative-site-range",
                               required=False,
                               help="Use windows from the database that have "
-                              "informative site frequencies within THRESHOLD "
+                              "informative site counts within RANGE "
                               "of the query windows informative site "
-                              "frequency to determine the null distribution",
+                              "count to determine the null distribution. "
+                              "If value is a float, it is multiplied by the "
+                              "count to determine the range",
                               default=0,
                               type=float,
-                              metavar="THRESHOLD")
+                              metavar="RANGE")
     pvalue_group.add_argument(
         "--overlap-regions",
         required=False,
@@ -269,12 +270,12 @@ def build_db(args):
 
 @functools.lru_cache(maxsize=None)
 def match_pct_pvalue(window_size, informative_site_count, population,
-                     match_pct, dbconn, threshold):
+                     match_pct, dbconn, range):
     '''Calculate emperical pvalue from windows in database'''
-    if np.equal(np.mod(threshold, 1), 0):
-        informative_site_range = threshold
+    if (range > 0) and (range < 1):
+        informative_site_range = range
     else:
-        informative_site_range = informative_site_count * threshold
+        informative_site_range = informative_site_count * range
     lower_threshold = informative_site_count - informative_site_range
     upper_threshold = informative_site_count + informative_site_range
 
@@ -359,7 +360,7 @@ def calc_match_pct(informative_sites, archaic_haplotypes, modern_haplotype):
 def calc_window_haplotype_match_pcts(
         vcf_file, chrom_sizes,
         archaic_sample_list, modern_sample_list,
-        window_size, step_size, informative_site_threshold,
+        window_size, step_size, informative_site_range,
         informative_site_method,
         dbconn=None, sample_populations=None, overlap_regions=None):
     '''Generate match pct for each window for each modern haplotype'''
@@ -442,7 +443,7 @@ def calc_window_haplotype_match_pcts(
                                     .population),
                         match_pct=match_pct,
                         dbconn=dbconn,
-                        threshold=informative_site_threshold)
+                        range=informative_site_range)
                     # TODO Calculate overlap with optional region file
                     (overlap_bp, overlap_informative_sites) = \
                         calculate_overlap(
@@ -566,7 +567,7 @@ def match_pct(args):
             modern_sample_list=modern_sample_list,
             window_size=args.window_size,
             step_size=args.step_size,
-            informative_site_threshold=args.informative_site_threshold,
+            informative_site_range=args.informative_site_range,
             informative_site_method=args.informative_site_method,
             dbconn=dbconn,
             sample_populations=sample_populations,
