@@ -272,13 +272,9 @@ def build_db(args):
 def match_pct_pvalue(window_size, informative_site_count, population,
                      match_pct, dbconn, range):
     '''Calculate emperical pvalue from windows in database'''
-    if (range > 0) and (range < 1):
-        informative_site_range = range
-    else:
-        informative_site_range = informative_site_count * range
-    lower_threshold = informative_site_count - informative_site_range
-    upper_threshold = informative_site_count + informative_site_range
-
+    (lower_threshold, upper_threshold) = (
+        calculate_thresholds(range, informative_site_count)
+    )
     n = windows_within_isc_threshold(
         window_size=window_size,
         informative_site_count=informative_site_count,
@@ -328,6 +324,21 @@ def windows_within_isc_threshold(window_size, informative_site_count,
     logging.debug("{} matching windows found".format(n))
     logging.debug("{} matching windows found".format(n))
     return n
+
+
+def calculate_thresholds(range, count):
+    '''Calculate lower and upper thesholds for informative site count
+    using the provided range and informative site count'''
+    if (range > 0) and (range < 1):
+        informative_site_range = count * range
+    else:
+        informative_site_range = range
+    lower_threshold = count - informative_site_range
+    upper_threshold = count + informative_site_range
+    logging.debug("Informative site count: {}".format(count))
+    logging.debug("Informative site range: +/-{}: ({} - {})".format(
+        range, lower_threshold, upper_threshold))
+    return((lower_threshold, upper_threshold))
 
 
 match_pct_window_pval = namedtuple(
