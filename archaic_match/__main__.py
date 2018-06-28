@@ -320,9 +320,6 @@ def windows_within_isc_threshold(window_size, informative_site_count,
         window_size, lower_threshold, upper_threshold, population)
     )
     logging.debug("{} matching windows found".format(n))
-    logging.debug("{} matching windows found".format(n))
-    logging.debug("{} matching windows found".format(n))
-    logging.debug("{} matching windows found".format(n))
     return n
 
 

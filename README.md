@@ -25,19 +25,20 @@ Other requirements
 ```
     archaic_match max-match-pct
         --vcf data/simulated_test/null/vcfs/Tenn_nonAfr_*_n1_0.1_n2_0.0.mod.vcf.gz
+        --populations data/simulated_test/null/Tenn.popfile  # file with columns for sample and population
         --archaic-populations Neand1  # archaic population to match against
         --modern-populations EUR AFR  # populations to generate match percents for
         --chrom-sizes 1000000  # or file with chrom and size columns
-        --populations data/simulated_test/null/Tenn.popfile  # file with columns for sample and population
         [--window-size [BP] (default: 50000)]
         [--step-size [BP] (default: 10000)]
+        [--informative_site_method {derived_in_archaic,derived_in_archaic_or_modern} [default: derived_in_archaic]
         > output/simulated_test/null_tables/afr_eur-vs-neand1/tsv/max_match_pct_counts_all.tsv
 ```
 
 ### Build database from match percent count table(s)
 ```
-    archaic_match build_db
-        --match_pct_count output/simulated_test/null_tables/afr_eur-vs-neand1/tsv/max_match_pct_counts_all.tsv
+    archaic_match build-db
+        --match-pct-count output/simulated_test/null_tables/afr_eur-vs-neand1/tsv/max_match_pct_counts_all.tsv
         --db output/simulated_test/null_tables/afr_eur-vs-neand1/max_match_pct_test.db
 ```
 
@@ -55,14 +56,15 @@ match percents using windows that have an informative site frequency within
 ```
     archaic_match max-match-pct
         --vcf data/simulated_test/0.1pct/vcfs/Tenn_nonAfr_*_n1_0.1_n2_0.0.mod.vcf.gz
+        --populations data/simulated_test/null/Tenn.popfile  # file with columns for sample and population
         --archaic-populations Neand1  # archaic population to match against
         --modern-populations EUR AFR  # populations to generate match percents for
         --chrom-sizes=1000000  # or file with chrom and size columns
-        --populations data/simulated_test/null/Tenn.popfile  # file with columns for sample and population
         [--window-size [BP] (default: 50000)]
         [--step-size [BP] (default: 10000)]
+        [--informative_site_method {derived_in_archaic,derived_in_archaic_or_modern} [default: derived_in_archaic]
         --match-pct-database output/simulated_test/null_tables/afr_eur-vs-neand1/max_match_pct.db
-        [--frequency-threshold [FLOAT] (default: 0.0001)]
+        [--informative-site-range [FLOAT] (default: 0)]
         [--overlap-regions [BED_FILE]]
         > output/simulated_test/0.1_pct_pvalues.txt
 ```
