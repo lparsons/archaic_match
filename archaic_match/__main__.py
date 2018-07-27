@@ -22,9 +22,9 @@ from .funcmodule import get_chrom_sizes
 from .funcmodule import generate_windows
 from .funcmodule import get_sample_populations
 from .funcmodule import get_informative_sites
+from .version import __version__
 
-
-__version__ = "0.2"
+__version__ = __version__
 __author__ = "Lance Parsons"
 __author_email__ = "lparsons@princeton.edu"
 __copyright__ = "Copyright 2018, Lance Parsons"
@@ -145,11 +145,11 @@ def main():
     common_options.add_argument("-v", "--verbose",
                                 help="increase output verbosity",
                                 action="store_true")
-    common_options.add_argument("--version", action="version",
-                                version="%(prog)s " + __version__)
 
     subparsers = parent_parser.add_subparsers(
         help="commands")
+    parent_parser.add_argument("--version", action="version",
+                               version="%(prog)s " + __version__)
 
     parser_match_pct = subparsers.add_parser(
         'max-match-pct',

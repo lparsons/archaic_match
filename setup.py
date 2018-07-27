@@ -4,9 +4,13 @@
 
 from setuptools import setup
 
+version = {}
+with open("archaic_match/version.py") as fp:
+    exec(fp.read(), version)
+
 setup(
     name='archaic_match',
-    version='0.1.0',
+    version=version['__version__'],
     packages=['archaic_match'],
     entry_points={
         'console_scripts': [
