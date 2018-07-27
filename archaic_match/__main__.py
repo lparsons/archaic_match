@@ -437,7 +437,7 @@ def calc_window_haplotype_match_pcts(
                     int(numpy.trunc(hap_idx / 2))]
                 modern_haplotype_id = "{sample}:{idx}".format(
                     sample=modern_sample,
-                    idx=hap_idx % 2)
+                    idx=(hap_idx % 2) + 1)
                 match_pct = calc_match_pct(
                     informative_sites, archic_haplotypes, modern_haplotype)
                 logging.debug("modern haplotype {} | match_pct {}".format(
