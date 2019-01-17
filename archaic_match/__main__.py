@@ -387,7 +387,7 @@ def calc_window_haplotype_match_pcts(
             seq=chrom, start=1, end=chrom_size
         )
         callset = allel.read_vcf(vcf_file, region=chrom_region)
-        if 'calldata/GT' not in callset:
+        if callset is None or 'calldata/GT' not in callset:
             continue
         archaic_sample_idx = [callset['samples'].tolist().index(i)
                               for i in archaic_sample_list]
