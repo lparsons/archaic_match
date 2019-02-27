@@ -6,15 +6,13 @@ Calculate archaic match percent for haplotype windows
 
 ## Installation
 
-Due to an [issue with scikit-allel installation](https://github.com/cggh/scikit-allel/issues/177)
-numpy must be installed before archaic_match.
+Latest development version
 
 ```
-    pip install numpy
     pip install git+https://github.com/lparsons/archaic_match
 ```
 
-Other requirements
+Other (non-python) requirements
 *   sqlite3
 *   tabix
 

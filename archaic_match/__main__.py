@@ -374,10 +374,11 @@ def calc_window_haplotype_match_pcts(
     '''Generate match pct for each window for each modern haplotype'''
     # TODO Use pysam here
     # http://pysam.readthedocs.io/en/latest/api.html#pysam.TabixFile
-    chromsomes_in_vcf = (subprocess.run(['tabix', '-l', vcf_file],
+    chromsomes_in_vcf = [
+        line for line in subprocess.run(['tabix', '-l', vcf_file],
                                         stdout=subprocess.PIPE,
                                         universal_newlines=True)
-                         .stdout.split('\n'))
+        .stdout.split('\n') if line.strip()]
     for chrom in chromsomes_in_vcf:
         chrom_size = chrom_sizes[chrom]
         if chrom is None:
@@ -387,7 +388,8 @@ def calc_window_haplotype_match_pcts(
             seq=chrom, start=1, end=chrom_size
         )
         callset = allel.read_vcf(vcf_file, region=chrom_region)
-        if 'calldata/GT' not in callset:
+        if (callset is None) or ('calldata/GT' not in callset):
+            logging.warn("callset is empty for region {}".format(chrom_region))
             continue
         archaic_sample_idx = [callset['samples'].tolist().index(i)
                               for i in archaic_sample_list]
