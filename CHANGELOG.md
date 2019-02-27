@@ -20,4 +20,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 [Unreleased]: https://github.com/lparsons/archaic_match/compare/v0.2.2...HEAD
-[0.2.2]: https://github.com/olivierlacan/keep-a-changelog/compare/v0.2.1...v0.2.2
+[0.2.2]: https://github.com/lparsons/archaic_match/compare/v0.2.1...v0.2.2
