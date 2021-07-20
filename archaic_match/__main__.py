@@ -62,15 +62,27 @@ def main():
                                   "sample, population, and super-population",
                                   metavar="FILE")
     population_group.add_argument("--archaic-populations",
-                                  required=True,
+                                  required=False,
+                                  default=[],
                                   nargs='+',
                                   help="List of archaic populations",
                                   metavar="FILE")
+    population_group.add_argument("--archaic-samples",
+                                  required=False,
+                                  default=[],
+                                  nargs='+',
+                                  help="List of archaic samples")
     population_group.add_argument("--modern-populations",
-                                  required=True,
+                                  required=False,
+                                  default=[],
                                   nargs='+',
                                   help="List of modern populations",
                                   metavar="FILE")
+    population_group.add_argument("--modern-superpopulations",
+                                  required=False,
+                                  default=[],
+                                  nargs='+',
+                                  help="List of modern superpopulations")
     population_group.add_argument("--chrom-sizes",
                                   required=True,
                                   help="Tab delimited file with seqid\tlength "
@@ -527,13 +539,30 @@ def match_pct(args):
     sample_populations = get_sample_populations(args.populations)
     logging.debug("Sample populations: {}".format(sample_populations))
 
-    archaic_sample_list = get_samplename_list(args.archaic_populations,
-                                              sample_populations)
+    archaic_sample_list = args.archaic_samples
+    archaic_sample_list += get_samplename_list(args.archaic_populations,
+                                               sample_populations)
+    # remove duplicates
+    archaic_sample_list = list(set(archaic_sample_list))
+
     logging.debug("Archaic sample list: {}".format(archaic_sample_list))
 
     modern_sample_list = get_samplename_list(args.modern_populations,
                                              sample_populations)
+    modern_sample_list += get_samplename_list(args.modern_superpopulations,
+                                              sample_populations,
+                                              match='superpopulation')
+    modern_sample_list = list(set(modern_sample_list))
+
     logging.debug("Modern sample list: {}".format(modern_sample_list))
+
+    if len(archaic_sample_list) == 0:
+        raise ValueError("Found no archaic samples, be sure to specify "
+                         "`archaic-populations` or `archaic-samples`")
+
+    if len(modern_sample_list) == 0:
+        raise ValueError("Found no modern samples, be sure to specify "
+                         "`modern-populations` or `modern-superpopulations`")
 
     if args.chrom_sizes.isdigit():
         chrom_sizes = defaultdict(lambda: int(args.chrom_sizes))
