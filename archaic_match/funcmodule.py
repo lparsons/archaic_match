@@ -7,13 +7,16 @@ from collections import defaultdict
 from .classmodule import Window
 
 
-def get_samplename_list(query_populations, sample_populations):
-    '''Returns sample names for given population'''
-    sample_list = list()
-    for sample in sample_populations.values():
-        if sample.population in query_populations:
-            sample_list.append(sample.name)
-    return sample_list
+def get_samplename_list(queries, samples,
+                        match='population'):
+    '''
+    Returns sample names for given queries as a list.
+    Can match to 'population', 'superpopulation' or 'sample'
+    Default is 'population'
+    '''
+    return [sample.name
+            for sample in samples.values()
+            if getattr(sample, match) in queries]
 
 
 def get_chrom_sizes(filename):

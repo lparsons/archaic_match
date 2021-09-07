@@ -62,15 +62,27 @@ def main():
                                   "sample, population, and super-population",
                                   metavar="FILE")
     population_group.add_argument("--archaic-populations",
-                                  required=True,
+                                  required=False,
+                                  default=[],
                                   nargs='+',
                                   help="List of archaic populations",
                                   metavar="FILE")
+    population_group.add_argument("--archaic-samples",
+                                  required=False,
+                                  default=[],
+                                  nargs='+',
+                                  help="List of archaic samples")
     population_group.add_argument("--modern-populations",
-                                  required=True,
+                                  required=False,
+                                  default=[],
                                   nargs='+',
                                   help="List of modern populations",
                                   metavar="FILE")
+    population_group.add_argument("--modern-superpopulations",
+                                  required=False,
+                                  default=[],
+                                  nargs='+',
+                                  help="List of modern superpopulations")
     population_group.add_argument("--chrom-sizes",
                                   required=True,
                                   help="Tab delimited file with seqid\tlength "
@@ -102,6 +114,12 @@ def main():
         "of each window that overlap these regions",
         metavar="BED_FILE"
     )
+    pvalue_group.add_argument("--query-on",
+                              required=False,
+                              help="Which sample attribute with which to "
+                              "query the database.  Can be 'population' "
+                              "or 'superpopulation'",
+                              default='population')
 
     # Window size options
     window_parser = argparse.ArgumentParser(
@@ -359,6 +377,8 @@ def calc_match_pct(informative_sites, archaic_haplotypes, modern_haplotype):
     haplotypes'''
     archaic_is_derived = archaic_haplotypes.count_alleles().is_variant()
     modern_is_derived = modern_haplotype > 0
+    if numpy.sum(informative_sites) == 0:
+        return numpy.NAN
     match_pct = numpy.sum(
         (informative_sites & archaic_is_derived & modern_is_derived)
         / numpy.sum(informative_sites))
@@ -370,7 +390,8 @@ def calc_window_haplotype_match_pcts(
         archaic_sample_list, modern_sample_list,
         window_size, step_size, informative_site_range,
         informative_site_method,
-        dbconn=None, sample_populations=None, overlap_regions=None):
+        dbconn=None, sample_populations=None, overlap_regions=None,
+        query_on='population'):
     '''Generate match pct for each window for each modern haplotype'''
     # TODO Use pysam here
     # http://pysam.readthedocs.io/en/latest/api.html#pysam.TabixFile
@@ -413,6 +434,8 @@ def calc_window_haplotype_match_pcts(
             logging.debug("window region: {}".format(window.region_string))
             variants_in_region = numpy.where(numpy.logical_and(
                 variant_pos > window.start, variant_pos <= window.end))
+            if variants_in_region[0].size == 0:
+                continue  # skip empty
             variant_pos_in_region = variant_pos[variants_in_region]
             window_genotype_array = genotype_array.subset(
                 sel0=variants_in_region[0])
@@ -442,15 +465,17 @@ def calc_window_haplotype_match_pcts(
                     idx=(hap_idx % 2) + 1)
                 match_pct = calc_match_pct(
                     informative_sites, archic_haplotypes, modern_haplotype)
-                logging.debug("modern haplotype {} | match_pct {}".format(
-                    modern_haplotype_id, match_pct))
+                # logging.debug("modern haplotype {} | match_pct {}".format(
+                #     modern_haplotype_id, match_pct))
+
+                query_population = getattr(sample_populations[modern_sample],
+                                           query_on)
 
                 if dbconn:
                     (pvalue, matching_windows) = match_pct_pvalue(
                         window_size=window.size,
                         informative_site_count=window.informative_site_count,
-                        population=(sample_populations[modern_sample]
-                                    .population),
+                        population=query_population,
                         match_pct=match_pct,
                         dbconn=dbconn,
                         range=informative_site_range)
@@ -465,9 +490,7 @@ def calc_window_haplotype_match_pcts(
                         end=window.end,
                         isc=window.informative_site_count,
                         haplotype=modern_haplotype_id,
-                        population=(
-                            sample_populations[modern_sample]
-                            .population),
+                        population=query_population,
                         match_pct=match_pct,
                         pvalue=pvalue,
                         matching_windows=matching_windows,
@@ -477,8 +500,7 @@ def calc_window_haplotype_match_pcts(
                     yield match_pct_window(
                         size=window.size,
                         isc=window.informative_site_count,
-                        population=sample_populations[modern_sample]
-                        .population,
+                        population=query_population,
                         match_pct=match_pct)
         logging.debug(
             "windows_within_isc_threshold.cache_info(): {}"
@@ -527,13 +549,30 @@ def match_pct(args):
     sample_populations = get_sample_populations(args.populations)
     logging.debug("Sample populations: {}".format(sample_populations))
 
-    archaic_sample_list = get_samplename_list(args.archaic_populations,
-                                              sample_populations)
+    archaic_sample_list = args.archaic_samples
+    archaic_sample_list += get_samplename_list(args.archaic_populations,
+                                               sample_populations)
+    # remove duplicates
+    archaic_sample_list = list(set(archaic_sample_list))
+
     logging.debug("Archaic sample list: {}".format(archaic_sample_list))
 
     modern_sample_list = get_samplename_list(args.modern_populations,
                                              sample_populations)
+    modern_sample_list += get_samplename_list(args.modern_superpopulations,
+                                              sample_populations,
+                                              match='superpopulation')
+    modern_sample_list = list(set(modern_sample_list))
+
     logging.debug("Modern sample list: {}".format(modern_sample_list))
+
+    if len(archaic_sample_list) == 0:
+        raise ValueError("Found no archaic samples, be sure to specify "
+                         "`archaic-populations` or `archaic-samples`")
+
+    if len(modern_sample_list) == 0:
+        raise ValueError("Found no modern samples, be sure to specify "
+                         "`modern-populations` or `modern-superpopulations`")
 
     if args.chrom_sizes.isdigit():
         chrom_sizes = defaultdict(lambda: int(args.chrom_sizes))
@@ -581,7 +620,8 @@ def match_pct(args):
             informative_site_method=args.informative_site_method,
             dbconn=dbconn,
             sample_populations=sample_populations,
-            overlap_regions=overlap_regions)
+            overlap_regions=overlap_regions,
+            query_on=args.query_on)
         if dbconn:
             for window_haplotype_match_pct in window_haplotype_match_pcts:
                 sys.stdout.write(
